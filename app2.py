@@ -51,11 +51,9 @@ with st.sidebar:
         "- Avoid frequent requests or you'll get a 15-min cooldown."
     )
     query = st.text_input("Keyword/Hashtag", "#python")
-    # SLIDER set from 10 to 100 (inclusive), step 1
     tweet_limit = st.slider(
         "Number of Tweets to Fetch", 10, 100, 10, step=1, key="tweet_limit_slider"
     )
-    # Disable fetch button during cooldown
     if current_time < st.session_state["cooldown_until"]:
         wait = int(st.session_state["cooldown_until"] - current_time)
         fetch_button = st.button("Fetch Tweets", disabled=True)
@@ -63,14 +61,12 @@ with st.sidebar:
     else:
         fetch_button = st.button("Fetch Tweets")
 
-# --- Bearer Token Warning (Non-Fatal) ---
 if not BEARER_TOKEN:
     st.warning(
         "**Twitter Bearer Token not found.**\n"
         "Add your token in Streamlit Secrets Manager as `TWITTER_BEARER_TOKEN`."
     )
 
-# --- Twitter API Setup ---
 client = None
 if BEARER_TOKEN:
     try:
@@ -177,7 +173,6 @@ def display_metrics(df):
     c3.metric("Pissed Off Tweets", f"{pissed_pct:.1f}%")
 
 def display_dashboard(df):
-    # Interactive grid table for tweet selection
     gb = GridOptionsBuilder.from_dataframe(df[["Header", "Pissed-offness", "Amusement", "Timestamp"]])
     gb.configure_selection(selection_mode="single", use_checkbox=False)
     gb.configure_pagination()
@@ -189,13 +184,10 @@ def display_dashboard(df):
         row = df.iloc[idx]
     else:
         row = df.iloc[0]
-    # Show tweet details
     st.markdown(f"**{row['Header']}**")
     st.markdown(f"<span style='font-size:0.92em'>{clean_text(row['Body'])}</span>", unsafe_allow_html=True)
     st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f} | Amusement: {row['Amusement']:+.2f}")
-    # Metrics block
     display_metrics(df)
-    # LIWC pie chart
     feature_obj = [{"value": v, "name": k} for k, v in row['LIWC'].items()]
     st_echarts({
         "title": {"text": "LIWC-Style Theme Breakdown", "left": "center"},
@@ -212,21 +204,15 @@ def display_dashboard(df):
             }
         ],
     }, height="350px")
-
-    # Timeline chart
     line_chart = alt.Chart(df).mark_line(point=True).encode(
         x=alt.X('Timestamp:T', title="Time", axis=alt.Axis(labelAngle=-45)),
         y=alt.Y('Pissed-offness:Q', title="Pissed-offness"),
         tooltip=["Header", "Pissed-offness", "Amusement", "Timestamp"]
     ).properties(width=720, title="Pissed-offness Over Time")
     st.altair_chart(line_chart, use_container_width=True)
-
-    # Word Cloud
     st.markdown("### Word Cloud Overview")
     wordcloud_img = generate_wordcloud([clean_text(t) for t in df["Body"]])
     st.image(f"data:image/png;base64,{wordcloud_img}", use_column_width=True, caption="Words across tweets")
-
-    # Download cached data
     csv_data = df.to_csv(index=False)
     st.download_button("Download Session Tweets (CSV)", csv_data, file_name="twitter_nlp_dashboard.csv")
 
@@ -246,7 +232,6 @@ if fetch_button:
             st.subheader("🟣 Live Tweets")
             display_dashboard(df)
 else:
-    # If we have cached data, allow visualization without API requests
     if st.session_state.get('tweets_df') is not None and not st.session_state['tweets_df'].empty:
         st.info("🔁 Showing last fetched tweets from session cache. No API request used.")
         display_dashboard(st.session_state['tweets_df'])

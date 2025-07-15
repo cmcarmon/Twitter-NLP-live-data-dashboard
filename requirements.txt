@@ -8,11 +8,6 @@ textblob
 python-dotenv
 streamlit-autorefresh
 streamlit
-tweepy
-pandas
-plotly
-textblob
-python-dotenv
 wordcloud
 nltk
 streamlit-aggrid
