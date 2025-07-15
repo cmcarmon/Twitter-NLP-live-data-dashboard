@@ -22,30 +22,39 @@ if "cooldown_until" not in st.session_state:
 
 current_time = time.time()
 
-# --- SIDEBAR CONTROLS ---
+# --- SIDEBAR CONTROLS (CLEANER PRESENTATION) ---
 with st.sidebar:
-    st.markdown("### Theme: Purple/Indigo 💜")
-    st.markdown(
-        f"<div style='background-color:{PURPLE_BG}; padding:10px; border-radius:10px; color:#2D1A47;'>"
-        "Enter a hashtag or keyword to analyze Twitter in real time."
-        "</div>", unsafe_allow_html=True
+    st.markdown("## 💜")
+
+    # Friendly, unobtrusive instructions (improved formatting)
+    st.info(
+        "Use the controls below to search and analyze live Twitter sentiment:\n\n"
+        "- Enter a hashtag or keyword.\n"
+        "- Pick the number of tweets to fetch (10–100).\n"
+        "- Click 'Fetch Tweets' to load data and see results.\n\n"
+        "**Tip:** Twitter API rate limits are strict. Avoid frequent searches to prevent a 15-minute cooldown."
     )
-    # SLIDER: Only allow valid range for Twitter API v2 (10-100)
-    tweet_limit = st.slider("Number of Tweets to Fetch", 10, 100, 10, step=1, key="tweet_limit_slider")
+
+    # Search bar above button/sliders for more intuitive UX
+    query = st.text_input("Keyword/Hashtag", "#python")
+
+    tweet_limit = st.slider(
+        "Number of Tweets to Fetch", 10, 100, 10, step=1, key="tweet_limit_slider"
+    )
+
     if current_time < st.session_state["cooldown_until"]:
         wait = int(st.session_state["cooldown_until"] - current_time)
         fetch_button = st.button("Fetch Tweets", disabled=True)
-        st.info(f"Rate limit active. Please wait {wait//60} min {wait%60} sec before making another request.")
+        st.info(f"Rate limit active. Please wait {wait//60} min {wait%60} sec.")
     else:
         fetch_button = st.button("Fetch Tweets")
-    query = st.text_input("Keyword/Hashtag", "#python")
 
 # --- Bearer Token Warning (Non-Fatal) ---
 if not BEARER_TOKEN:
     st.warning(
         "**Twitter Bearer Token not found.**\n"
-        "On Streamlit Cloud, add your token via Secrets Manager as `TWITTER_BEARER_TOKEN`.\n"
-        "You can still explore the UI, but live data will not be fetched."
+        "Add your token in Streamlit Cloud's Secrets Manager as `TWITTER_BEARER_TOKEN`.\n"
+        "You can still use the UI, but live data cannot be loaded."
     )
 
 # --- Twitter API Setup ---
@@ -129,4 +138,4 @@ if fetch_button:
             )
             st.plotly_chart(fig2, use_container_width=True)
 else:
-    st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
+    st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
