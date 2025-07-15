@@ -10,11 +10,11 @@ import dotenv
 PURPLE_BG = "#F3F0FF"
 PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 
-# --- LOAD .env AND VALIDATE BEARER TOKEN ---
+# --- LOAD AND VALIDATE BEARER TOKEN ---
 dotenv.load_dotenv()
 BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 if not BEARER_TOKEN:
-    st.error("Twitter Bearer Token not found. Put your .env file in the project root and double-check for 'TWITTER_BEARER_TOKEN=...' with NO quotes or extra spaces.")
+    st.error("Twitter Bearer Token not found. Ensure your .env file is in the project root and contains 'TWITTER_BEARER_TOKEN=...' (no spaces or quotes).")
     st.stop()
 
 # --- TWITTER API SETUP ---
@@ -24,10 +24,11 @@ except Exception as e:
     st.error(f"Error creating Tweepy client: {e}")
     st.stop()
 
+# --- STREAMLIT PAGE SETUP ---
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- SIDEBAR CONTROLS ---
+# --- SIDEBAR CONTROLS (Always Visible) ---
 with st.sidebar:
     st.markdown("### Theme: Purple/Indigo 💜")
     st.markdown(
@@ -101,4 +102,5 @@ if fetch_button:
         st.plotly_chart(fig2, use_container_width=True)
 else:
     st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
+
 
