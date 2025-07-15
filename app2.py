@@ -30,14 +30,15 @@ with st.sidebar:
         "Enter a hashtag or keyword to analyze Twitter in real time."
         "</div>", unsafe_allow_html=True
     )
-    query = st.text_input("Keyword/Hashtag", "#python")
-    tweet_limit = st.slider("Number of Tweets to Fetch", 1, 20, 3, key="tweet_limit_slider")
+    # SLIDER: Only allow valid range for Twitter API v2 (10-100)
+    tweet_limit = st.slider("Number of Tweets to Fetch", 10, 100, 10, step=1, key="tweet_limit_slider")
     if current_time < st.session_state["cooldown_until"]:
         wait = int(st.session_state["cooldown_until"] - current_time)
         fetch_button = st.button("Fetch Tweets", disabled=True)
         st.info(f"Rate limit active. Please wait {wait//60} min {wait%60} sec before making another request.")
     else:
         fetch_button = st.button("Fetch Tweets")
+    query = st.text_input("Keyword/Hashtag", "#python")
 
 # --- Bearer Token Warning (Non-Fatal) ---
 if not BEARER_TOKEN:
@@ -61,10 +62,12 @@ def fetch_and_analyze(query, tweet_limit):
     tweets, sentiments, times = [], [], []
     if not BEARER_TOKEN or not client:
         return pd.DataFrame(columns=["Timestamp", "Tweet", "Sentiment"])
+    # Defensive: ensure tweet_limit always within correct bounds
+    tweet_limit = max(10, min(tweet_limit, 100))
     try:
         response = client.search_recent_tweets(
             query=query,
-            max_results=min(tweet_limit, 100),
+            max_results=tweet_limit,
             tweet_fields=["created_at", "lang"]
         )
         if response.data is not None:
