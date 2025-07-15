@@ -12,23 +12,22 @@ PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- Load Bearer Token from Streamlit Secrets Only ---
+# --- SECRETS-ONLY: LOAD BEARER TOKEN FOR STREAMLIT CLOUD ---
 BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", "")
 
-# --- SIDEBAR CONTROLS (Always Rendered) ---
+# --- SIDEBAR CONTROLS ---
 with st.sidebar:
     st.markdown("### Theme: Purple/Indigo 💜")
     st.markdown(
         f"<div style='background-color:{PURPLE_BG}; padding:10px; border-radius:10px; color:#2D1A47;'>"
         "Enter a hashtag or keyword to analyze Twitter in real time."
-        "</div>",
-        unsafe_allow_html=True
+        "</div>", unsafe_allow_html=True
     )
     query = st.text_input("Keyword/Hashtag", "#python")
     tweet_limit = st.slider("Number of Tweets to Fetch", 1, 20, 3, key="tweet_limit_slider")
     fetch_button = st.button("Fetch Tweets")
 
-# --- Bearer Token Warning (Non-Fatal) ---
+# --- Show Token Warning (Non-fatal) ---
 if not BEARER_TOKEN:
     st.warning(
         "**Twitter Bearer Token not found.**\n"
@@ -36,7 +35,7 @@ if not BEARER_TOKEN:
         "You can still explore the UI, but live data will not be fetched."
     )
 
-# --- Twitter API Setup ---
+# --- Twitter API Setup (Only if Token Present) ---
 client = None
 if BEARER_TOKEN:
     try:
@@ -44,7 +43,7 @@ if BEARER_TOKEN:
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
-# --- Caching: Only Hashable Params ---
+# --- Caching: Only Accept Hashable Params ---
 @st.cache_data
 def fetch_and_analyze(query, tweet_limit):
     tweets, sentiments, times = [], [], []
@@ -65,11 +64,13 @@ def fetch_and_analyze(query, tweet_limit):
                     tweets.append(text)
                     sentiments.append(sentiment)
                     times.append(tweet.created_at)
+    except tweepy.TooManyRequests:
+        st.error("Twitter API rate limit exceeded. Please wait several minutes and try again.")
     except Exception as e:
-        st.error(f"Error fetching tweets from Twitter: {e}")
+        st.error(f"Error fetching tweets: {e}")
     return pd.DataFrame({"Timestamp": times, "Tweet": tweets, "Sentiment": sentiments})
 
-# --- Main App Logic ---
+# --- Main Dashboard Logic ---
 if fetch_button:
     df = fetch_and_analyze(query, tweet_limit)
     if not BEARER_TOKEN:
