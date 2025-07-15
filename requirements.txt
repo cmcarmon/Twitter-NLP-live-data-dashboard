@@ -6,3 +6,4 @@ seaborn
 plotly
 textblob
 python-dotenv
+streamlit-autorefresh
