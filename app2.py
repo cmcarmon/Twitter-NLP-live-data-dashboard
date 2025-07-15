@@ -5,7 +5,6 @@ import os
 from textblob import TextBlob
 import tweepy
 import dotenv
-from streamlit_autorefresh import st_autorefresh
 
 # --- THEME CONSTANTS ---
 PURPLE_BG = "#F3F0FF"
@@ -29,15 +28,10 @@ with st.sidebar:
         "</div>", unsafe_allow_html=True
     )
     query = st.text_input("Keyword/Hashtag", "#python")
-    tweet_limit = st.slider("Number of Tweets to Fetch", 5, 100, 5)
-    refresh_rate = st.slider("Refresh rate (seconds) - controls UI refresh", 10, 120, 30)
-
+    tweet_limit = st.slider("Number of Tweets to Fetch", 5, 100, 5, key="tweet_limit_slider")  # default is now 5
     fetch_button = st.button("Fetch Tweets")
 
-# --- USE AUTORERESH TO KEEP UI FRESH ---
-st_autorefresh(interval=refresh_rate * 1000, key="ui_refresh")
-
-@st.cache_data(ttl=refresh_rate)
+@st.cache_data
 def fetch_and_analyze(query, tweet_limit):
     tweets, sentiments, times = [], [], []
     try:
@@ -57,10 +51,7 @@ def fetch_and_analyze(query, tweet_limit):
         st.error(f"Error fetching tweets: {e}")
     return pd.DataFrame({"Timestamp": times, "Tweet": tweets, "Sentiment": sentiments})
 
-# --- MAIN LAYOUT ---
-
 if fetch_button:
-    # Fetch tweets only when button is clicked
     df = fetch_and_analyze(query, tweet_limit)
 
     if df.empty:
@@ -97,8 +88,5 @@ if fetch_button:
         )
         st.plotly_chart(fig2, use_container_width=True)
 else:
-    # Prompt user to click the button before fetching tweets
     st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
-
-
 
