@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
+import time
 from textblob import TextBlob
 import tweepy
 
@@ -12,8 +13,14 @@ PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- SECRETS-ONLY: LOAD BEARER TOKEN FOR STREAMLIT CLOUD ---
+# --- Load Bearer Token from Streamlit Secrets Only ---
 BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", "")
+
+# --- Session State for Rate Limit Cooldown ---
+if "cooldown_until" not in st.session_state:
+    st.session_state["cooldown_until"] = 0
+
+current_time = time.time()
 
 # --- SIDEBAR CONTROLS ---
 with st.sidebar:
@@ -25,9 +32,14 @@ with st.sidebar:
     )
     query = st.text_input("Keyword/Hashtag", "#python")
     tweet_limit = st.slider("Number of Tweets to Fetch", 1, 20, 3, key="tweet_limit_slider")
-    fetch_button = st.button("Fetch Tweets")
+    if current_time < st.session_state["cooldown_until"]:
+        wait = int(st.session_state["cooldown_until"] - current_time)
+        fetch_button = st.button("Fetch Tweets", disabled=True)
+        st.info(f"Rate limit active. Please wait {wait//60} min {wait%60} sec before making another request.")
+    else:
+        fetch_button = st.button("Fetch Tweets")
 
-# --- Show Token Warning (Non-fatal) ---
+# --- Bearer Token Warning (Non-Fatal) ---
 if not BEARER_TOKEN:
     st.warning(
         "**Twitter Bearer Token not found.**\n"
@@ -35,7 +47,7 @@ if not BEARER_TOKEN:
         "You can still explore the UI, but live data will not be fetched."
     )
 
-# --- Twitter API Setup (Only if Token Present) ---
+# --- Twitter API Setup ---
 client = None
 if BEARER_TOKEN:
     try:
@@ -65,48 +77,53 @@ def fetch_and_analyze(query, tweet_limit):
                     sentiments.append(sentiment)
                     times.append(tweet.created_at)
     except tweepy.TooManyRequests:
-        st.error("Twitter API rate limit exceeded. Please wait several minutes and try again.")
+        st.session_state["cooldown_until"] = time.time() + 15 * 60  # 15 min cooldown
+        st.error("Twitter API rate limit exceeded. Please wait 15 minutes before trying again.")
     except Exception as e:
         st.error(f"Error fetching tweets: {e}")
     return pd.DataFrame({"Timestamp": times, "Tweet": tweets, "Sentiment": sentiments})
 
 # --- Main Dashboard Logic ---
 if fetch_button:
-    df = fetch_and_analyze(query, tweet_limit)
-    if not BEARER_TOKEN:
-        st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
-    elif df.empty:
-        st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
+    if current_time < st.session_state["cooldown_until"]:
+        wait = int(st.session_state["cooldown_until"] - current_time)
+        st.warning(f"Rate limit in effect. Please wait {wait//60} min {wait%60} sec before trying again.")
     else:
-        st.subheader("🟣 Live Tweets")
-        st.dataframe(df[["Timestamp", "Tweet", "Sentiment"]], use_container_width=True, height=260)
+        df = fetch_and_analyze(query, tweet_limit)
+        if not BEARER_TOKEN:
+            st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
+        elif df.empty:
+            st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
+        else:
+            st.subheader("🟣 Live Tweets")
+            st.dataframe(df[["Timestamp", "Tweet", "Sentiment"]], use_container_width=True, height=260)
 
-        avg_sentiment = df["Sentiment"].mean() if not df.empty else 0
-        pos_count = (df["Sentiment"] > 0).sum()
-        neg_count = (df["Sentiment"] < 0).sum()
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Avg Sentiment", f"{avg_sentiment:.2f}")
-        k2.metric("Positive Tweets", int(pos_count))
-        k3.metric("Negative Tweets", int(neg_count))
+            avg_sentiment = df["Sentiment"].mean() if not df.empty else 0
+            pos_count = (df["Sentiment"] > 0).sum()
+            neg_count = (df["Sentiment"] < 0).sum()
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Avg Sentiment", f"{avg_sentiment:.2f}")
+            k2.metric("Positive Tweets", int(pos_count))
+            k3.metric("Negative Tweets", int(neg_count))
 
-        fig1 = px.line(
-            df, x="Timestamp", y="Sentiment", title="Sentiment Over Time",
-            markers=True, color_discrete_sequence=PURPLE_PALETTE
-        )
-        fig1.update_layout(
-            plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47",
-            font_family="sans-serif", title_font_color="#7B2FF2"
-        )
-        st.plotly_chart(fig1, use_container_width=True)
+            fig1 = px.line(
+                df, x="Timestamp", y="Sentiment", title="Sentiment Over Time",
+                markers=True, color_discrete_sequence=PURPLE_PALETTE
+            )
+            fig1.update_layout(
+                plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47",
+                font_family="sans-serif", title_font_color="#7B2FF2"
+            )
+            st.plotly_chart(fig1, use_container_width=True)
 
-        fig2 = px.histogram(
-            df, x="Sentiment", nbins=10, title="Sentiment Distribution",
-            color_discrete_sequence=PURPLE_PALETTE
-        )
-        fig2.update_layout(
-            plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47",
-            font_family="sans-serif", title_font_color="#7B2FF2"
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+            fig2 = px.histogram(
+                df, x="Sentiment", nbins=10, title="Sentiment Distribution",
+                color_discrete_sequence=PURPLE_PALETTE
+            )
+            fig2.update_layout(
+                plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47",
+                font_family="sans-serif", title_font_color="#7B2FF2"
+            )
+            st.plotly_chart(fig2, use_container_width=True)
 else:
     st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
