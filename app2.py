@@ -10,14 +10,12 @@ import dotenv
 PURPLE_BG = "#F3F0FF"
 PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 
-# --- LOAD .env AND VERIFY BEARER TOKEN ---
+# --- LOAD .env AND VALIDATE BEARER TOKEN ---
 dotenv.load_dotenv()
 BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 if not BEARER_TOKEN:
-    st.error("Twitter Bearer Token not found. Make sure your .env is in the project root and includes 'TWITTER_BEARER_TOKEN=...' (no spaces or quotes).")
+    st.error("Twitter Bearer Token not found. Put your .env file in the project root and double-check for 'TWITTER_BEARER_TOKEN=...' with NO quotes or extra spaces.")
     st.stop()
-else:
-    st.info("Bearer Token loaded successfully.", icon="✅")
 
 # --- TWITTER API SETUP ---
 try:
@@ -26,7 +24,6 @@ except Exception as e:
     st.error(f"Error creating Tweepy client: {e}")
     st.stop()
 
-# --- STREAMLIT PAGE SETUP ---
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
@@ -53,8 +50,8 @@ def fetch_and_analyze(query, tweet_limit):
         )
         if response.data is not None:
             for tweet in response.data:
-                # Some environments may return tweet.lang as None if not present
-                if getattr(tweet, "lang", "en") == "en":
+                lang = getattr(tweet, "lang", None)
+                if lang is None or lang == "en":
                     text = tweet.text
                     sentiment = TextBlob(text).sentiment.polarity
                     tweets.append(text)
@@ -104,3 +101,4 @@ if fetch_button:
         st.plotly_chart(fig2, use_container_width=True)
 else:
     st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
+
