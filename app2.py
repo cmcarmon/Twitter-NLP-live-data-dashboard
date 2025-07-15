@@ -12,13 +12,8 @@ PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- LOAD BEARER TOKEN (Streamlit Cloud: secrets, else os.env) ---
-def get_bearer_token():
-    if "TWITTER_BEARER_TOKEN" in st.secrets:
-        return st.secrets["TWITTER_BEARER_TOKEN"]
-    return os.getenv("TWITTER_BEARER_TOKEN", "")
-
-BEARER_TOKEN = get_bearer_token()
+# --- Load Bearer Token from Streamlit Secrets Only ---
+BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", "")
 
 # --- SIDEBAR CONTROLS (Always Rendered) ---
 with st.sidebar:
@@ -38,7 +33,7 @@ if not BEARER_TOKEN:
     st.warning(
         "**Twitter Bearer Token not found.**\n"
         "On Streamlit Cloud, add your token via Secrets Manager as `TWITTER_BEARER_TOKEN`.\n"
-        "Locally, set it as an environment variable or in a .env file."
+        "You can still explore the UI, but live data will not be fetched."
     )
 
 # --- Twitter API Setup ---
@@ -49,12 +44,11 @@ if BEARER_TOKEN:
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
-# --- Caching Fix: Do NOT pass unhashable 'client' param into the cache ---
+# --- Caching: Only Hashable Params ---
 @st.cache_data
 def fetch_and_analyze(query, tweet_limit):
     tweets, sentiments, times = [], [], []
     if not BEARER_TOKEN or not client:
-        # Safely return empty if no valid client
         return pd.DataFrame(columns=["Timestamp", "Tweet", "Sentiment"])
     try:
         response = client.search_recent_tweets(
@@ -79,7 +73,7 @@ def fetch_and_analyze(query, tweet_limit):
 if fetch_button:
     df = fetch_and_analyze(query, tweet_limit)
     if not BEARER_TOKEN:
-        st.warning("Bearer Token missing—live data fetch won't work until the token is added.")
+        st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
     elif df.empty:
         st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
     else:
@@ -115,6 +109,3 @@ if fetch_button:
         st.plotly_chart(fig2, use_container_width=True)
 else:
     st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
-
-
-
