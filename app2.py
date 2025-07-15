@@ -12,7 +12,7 @@ PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- Load Bearer Token: Prefer Secrets (Cloud), then Environment ---
+# --- LOAD BEARER TOKEN (Streamlit Cloud: secrets, else os.env) ---
 def get_bearer_token():
     if "TWITTER_BEARER_TOKEN" in st.secrets:
         return st.secrets["TWITTER_BEARER_TOKEN"]
@@ -37,12 +37,11 @@ with st.sidebar:
 if not BEARER_TOKEN:
     st.warning(
         "**Twitter Bearer Token not found.**\n"
-        "In Streamlit Cloud, add your token in the app's Secrets Manager as `TWITTER_BEARER_TOKEN`. "
-        "Locally, make sure it's set in your environment or .env file.\n\n"
-        "You can still use the sidebar controls and learn how the UI works."
+        "On Streamlit Cloud, add your token via Secrets Manager as `TWITTER_BEARER_TOKEN`.\n"
+        "Locally, set it as an environment variable or in a .env file."
     )
 
-# --- Twitter API Setup (Only if Token Is Present) ---
+# --- Twitter API Setup ---
 client = None
 if BEARER_TOKEN:
     try:
@@ -50,10 +49,12 @@ if BEARER_TOKEN:
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
+# --- Caching Fix: Do NOT pass unhashable 'client' param into the cache ---
 @st.cache_data
-def fetch_and_analyze(query, tweet_limit, client):
+def fetch_and_analyze(query, tweet_limit):
     tweets, sentiments, times = [], [], []
-    if not client:
+    if not BEARER_TOKEN or not client:
+        # Safely return empty if no valid client
         return pd.DataFrame(columns=["Timestamp", "Tweet", "Sentiment"])
     try:
         response = client.search_recent_tweets(
@@ -74,13 +75,11 @@ def fetch_and_analyze(query, tweet_limit, client):
         st.error(f"Error fetching tweets from Twitter: {e}")
     return pd.DataFrame({"Timestamp": times, "Tweet": tweets, "Sentiment": sentiments})
 
-# --- Main Dashboard Logic ---
+# --- Main App Logic ---
 if fetch_button:
-    df = fetch_and_analyze(query, tweet_limit, client)
+    df = fetch_and_analyze(query, tweet_limit)
     if not BEARER_TOKEN:
-        st.warning(
-            "Bearer Token missing—live data fetch won't work until the token is added."
-        )
+        st.warning("Bearer Token missing—live data fetch won't work until the token is added.")
     elif df.empty:
         st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
     else:
@@ -116,7 +115,6 @@ if fetch_button:
         st.plotly_chart(fig2, use_container_width=True)
 else:
     st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
-
 
 
 
