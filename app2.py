@@ -3,15 +3,14 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import altair as alt
-import os
 import time
+import base64
 from io import BytesIO
 from textblob import TextBlob
 import tweepy
 from wordcloud import WordCloud
-import base64
-
 import nltk
+
 nltk.download('punkt', quiet=True)
 nltk.download('stopwords', quiet=True)
 from nltk.corpus import stopwords
@@ -27,28 +26,28 @@ PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide", initial_sidebar_state='expanded')
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- Load Bearer Token from Streamlit Secrets Only ---
+# --- Twitter Bearer Token (from Streamlit Cloud Secrets) ---
 BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", "")
 
-# --- Session State for Rate Limit Cooldown and Caching ---
+# --- Session State for Rate Limit Cooldown and Cached Tweets ---
 if "cooldown_until" not in st.session_state:
     st.session_state["cooldown_until"] = 0
-if "selected_tweet_idx" not in st.session_state:
-    st.session_state["selected_tweet_idx"] = None
 if "tweets_df" not in st.session_state:
     st.session_state["tweets_df"] = None
+if "selected_tweet_idx" not in st.session_state:
+    st.session_state["selected_tweet_idx"] = None
 
 current_time = time.time()
 
-# --- SIDEBAR CONTROLS (IMPROVED PRESENTATION) ---
+# --- SIDEBAR CONTROLS ---
 with st.sidebar:
     st.markdown("## 💜")
     st.info(
-        "- **Enter a hashtag or keyword.**\n"
-        "- **Choose number of tweets (10–100).**\n"
-        "- **Click 'Fetch Tweets' to analyze.**\n\n"
-        "- 'Pissed-offness Metric': +1 = Pissed off, -1 = Amused.\n"
-        "- Avoid frequent requests or you'll get a 15-min cooldown."
+        "- **Enter a hashtag or keyword**\n"
+        "- **Choose number of tweets (10–100)**\n"
+        "- **Click 'Fetch Tweets' to analyze**\n\n"
+        "- 'Pissed-offness Metric': +1 = Pissed off, -1 = Amused\n"
+        "- Avoid frequent requests to prevent a cooldown"
     )
     query = st.text_input("Keyword/Hashtag", "#python")
     tweet_limit = st.slider(
@@ -63,10 +62,10 @@ with st.sidebar:
 
 if not BEARER_TOKEN:
     st.warning(
-        "**Twitter Bearer Token not found.**\n"
-        "Add your token in Streamlit Secrets Manager as `TWITTER_BEARER_TOKEN`."
+        "**Twitter Bearer Token not found.** Add your token in Streamlit Secrets Manager as `TWITTER_BEARER_TOKEN`."
     )
 
+# --- Twitter API Setup ---
 client = None
 if BEARER_TOKEN:
     try:
@@ -74,6 +73,7 @@ if BEARER_TOKEN:
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
+# --- Helper Functions ---
 def clean_text(text):
     import re
     text = re.sub(r"http\S+", "", text)
@@ -128,7 +128,7 @@ def fetch_and_analyze(query, tweet_limit):
                     body = clean_text(raw)
                     polarity = TextBlob(body).sentiment.polarity
                     amuse_score = round(-polarity, 3)
-                    pissed_score = round(polarity * -1, 3)  # +1 = pissed off, -1 = amused
+                    pissed_score = round(polarity * -1, 3)
                     scores = liwc_like_categories(body)
                     tweets.append(raw)
                     headers.append(header)
@@ -137,7 +137,7 @@ def fetch_and_analyze(query, tweet_limit):
                     times.append(tweet.created_at)
                     liwc_scores.append(scores)
     except tweepy.TooManyRequests:
-        st.session_state["cooldown_until"] = time.time() + 15 * 60  # 15 min cooldown
+        st.session_state["cooldown_until"] = time.time() + 15 * 60
         st.error("Twitter API rate limit exceeded. Please wait 15 minutes before trying again.")
     except Exception as e:
         st.error(f"Error fetching tweets: {e}")
@@ -154,14 +154,12 @@ def fetch_and_analyze(query, tweet_limit):
 def display_metrics(df):
     avg_pissed = df["Pissed-offness"].mean() if not df.empty else 0
     avg_pissed_pct = abs(avg_pissed) * 100
-    # Main metric card logic
     if avg_pissed >= 0:
         metric_label = f"{avg_pissed_pct:.0f}% Pissed off"
         explanation = "(+100 = maximum pissed off, -100 = maximum amused, 0 = neutral)"
     else:
         metric_label = f"{avg_pissed_pct:.0f}% Amused"
         explanation = "(+100 = maximum pissed off, -100 = maximum amused, 0 = neutral)"
-    # Classify tweets
     num_amused = (df["Pissed-offness"] < -0.05).sum()
     num_pissed = (df["Pissed-offness"] > 0.05).sum()
     amused_pct = 100 * num_amused / len(df)
@@ -232,8 +230,9 @@ if fetch_button:
             st.subheader("🟣 Live Tweets")
             display_dashboard(df)
 else:
+    # UI to allow reviewing cached data even during cooldown/rate limit
     if st.session_state.get('tweets_df') is not None and not st.session_state['tweets_df'].empty:
-        st.info("🔁 Showing last fetched tweets from session cache. No API request used.")
+        st.info("🔁 Showing last fetched tweets from session cache. No API request used. (You are not using up your quota.)")
         display_dashboard(st.session_state['tweets_df'])
     else:
         st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
