@@ -1,0 +1,8 @@
+streamlit
+tweepy
+pandas
+matplotlib
+seaborn
+plotly
+textblob
+python-dotenv
