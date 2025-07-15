@@ -4,45 +4,57 @@ import plotly.express as px
 import os
 from textblob import TextBlob
 import tweepy
-import dotenv
 
 # --- THEME CONSTANTS ---
 PURPLE_BG = "#F3F0FF"
 PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 
-# --- LOAD AND VALIDATE BEARER TOKEN ---
-dotenv.load_dotenv()
-BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
-if not BEARER_TOKEN:
-    st.error("Twitter Bearer Token not found. Ensure your .env file is in the project root and contains 'TWITTER_BEARER_TOKEN=...' (no spaces or quotes).")
-    st.stop()
-
-# --- TWITTER API SETUP ---
-try:
-    client = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=True)
-except Exception as e:
-    st.error(f"Error creating Tweepy client: {e}")
-    st.stop()
-
-# --- STREAMLIT PAGE SETUP ---
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- SIDEBAR CONTROLS (Always Visible) ---
+# --- Load Bearer Token: Prefer Secrets (Cloud), then Environment ---
+def get_bearer_token():
+    if "TWITTER_BEARER_TOKEN" in st.secrets:
+        return st.secrets["TWITTER_BEARER_TOKEN"]
+    return os.getenv("TWITTER_BEARER_TOKEN", "")
+
+BEARER_TOKEN = get_bearer_token()
+
+# --- SIDEBAR CONTROLS (Always Rendered) ---
 with st.sidebar:
     st.markdown("### Theme: Purple/Indigo 💜")
     st.markdown(
         f"<div style='background-color:{PURPLE_BG}; padding:10px; border-radius:10px; color:#2D1A47;'>"
         "Enter a hashtag or keyword to analyze Twitter in real time."
-        "</div>", unsafe_allow_html=True,
+        "</div>",
+        unsafe_allow_html=True
     )
     query = st.text_input("Keyword/Hashtag", "#python")
     tweet_limit = st.slider("Number of Tweets to Fetch", 1, 20, 3, key="tweet_limit_slider")
     fetch_button = st.button("Fetch Tweets")
 
+# --- Bearer Token Warning (Non-Fatal) ---
+if not BEARER_TOKEN:
+    st.warning(
+        "**Twitter Bearer Token not found.**\n"
+        "In Streamlit Cloud, add your token in the app's Secrets Manager as `TWITTER_BEARER_TOKEN`. "
+        "Locally, make sure it's set in your environment or .env file.\n\n"
+        "You can still use the sidebar controls and learn how the UI works."
+    )
+
+# --- Twitter API Setup (Only if Token Is Present) ---
+client = None
+if BEARER_TOKEN:
+    try:
+        client = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=True)
+    except Exception as e:
+        st.error(f"Error creating Tweepy client: {e}")
+
 @st.cache_data
-def fetch_and_analyze(query, tweet_limit):
+def fetch_and_analyze(query, tweet_limit, client):
     tweets, sentiments, times = [], [], []
+    if not client:
+        return pd.DataFrame(columns=["Timestamp", "Tweet", "Sentiment"])
     try:
         response = client.search_recent_tweets(
             query=query,
@@ -58,16 +70,18 @@ def fetch_and_analyze(query, tweet_limit):
                     tweets.append(text)
                     sentiments.append(sentiment)
                     times.append(tweet.created_at)
-        else:
-            st.warning("Twitter returned no tweet data for this query.")
     except Exception as e:
         st.error(f"Error fetching tweets from Twitter: {e}")
     return pd.DataFrame({"Timestamp": times, "Tweet": tweets, "Sentiment": sentiments})
 
+# --- Main Dashboard Logic ---
 if fetch_button:
-    df = fetch_and_analyze(query, tweet_limit)
-
-    if df.empty:
+    df = fetch_and_analyze(query, tweet_limit, client)
+    if not BEARER_TOKEN:
+        st.warning(
+            "Bearer Token missing—live data fetch won't work until the token is added."
+        )
+    elif df.empty:
         st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
     else:
         st.subheader("🟣 Live Tweets")
@@ -102,5 +116,7 @@ if fetch_button:
         st.plotly_chart(fig2, use_container_width=True)
 else:
     st.info("Click 'Fetch Tweets' in the sidebar to load the latest Twitter data.")
+
+
 
 
