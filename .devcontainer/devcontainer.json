@@ -1,0 +1,32 @@
+{
+  "name": "Streamlit Twitter NLP Python 3.13",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bullseye",
+  "customizations": {
+    "codespaces": {
+      "openFiles": [
+        "README.md",
+        "app2.py"
+      ]
+    },
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
+    }
+  },
+  "updateContentCommand": "[ -f packages.txt ] && sudo apt update && sudo apt upgrade -y && sudo xargs apt install -y <packages.txt; [ -f requirements.txt ] && pip3 install --user -r requirements.txt; pip3 install --user streamlit; python3 -m textblob.download_corpora; echo '✅ Packages and corpora installed and Requirements met'",
+  "postAttachCommand": {
+    "server": "streamlit run app2.py --server.enableCORS false --server.enableXsrfProtection false"
+  },
+  "portsAttributes": {
+    "8501": {
+      "label": "Application",
+      "onAutoForward": "openPreview"
+    }
+  },
+  "forwardPorts": [
+    8501
+  ]
+}
