@@ -10,7 +10,7 @@ import tweepy
 from wordcloud import WordCloud
 import nltk
 
-# --- Robust NLTK Setup ---
+# --- NLTK Setup ---
 nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
 os.makedirs(nltk_data_dir, exist_ok=True)
 if nltk_data_dir not in nltk.data.path:
@@ -181,7 +181,6 @@ def display_dashboard(df):
 
     st.write("#### Filtered Tweets (Long-form, 120+ words)")
     df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
-    # Dropdown: Change to show all tweets by index and preview, not just the current one.
     st.write("**Select a tweet below to view its details and LIWC analysis:**")
     options = [(i, df.iloc[i]["Short Tweet"]) for i in range(len(df))]
     selected_idx = st.selectbox(
