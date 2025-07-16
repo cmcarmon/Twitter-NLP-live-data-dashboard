@@ -4,55 +4,50 @@ import plotly.express as px
 import plotly.graph_objects as go
 import altair as alt
 import time
-import base64
-from io import BytesIO
 from textblob import TextBlob
 import tweepy
+import base64
+from io import BytesIO
 from wordcloud import WordCloud
-import nltk
 
+# Ensure NLTK resources
+import nltk
 nltk.download('punkt', quiet=True)
 nltk.download('stopwords', quiet=True)
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
-from st_aggrid import AgGrid, GridOptionsBuilder
-from streamlit_echarts import st_echarts
-
-# --- THEME CONSTANTS ---
 PURPLE_BG = "#F3F0FF"
 PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 
-st.set_page_config(page_title="Live NLP Dashboard", layout="wide", initial_sidebar_state='expanded')
+st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# --- Twitter Bearer Token (from Streamlit Cloud Secrets) ---
+# BEARER_TOKEN from Streamlit Cloud secrets
 BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", "")
 
-# --- Session State for Rate Limit Cooldown and Cached Tweets ---
+# Session state: cooldown and cache
 if "cooldown_until" not in st.session_state:
     st.session_state["cooldown_until"] = 0
 if "tweets_df" not in st.session_state:
     st.session_state["tweets_df"] = None
-if "selected_tweet_idx" not in st.session_state:
-    st.session_state["selected_tweet_idx"] = None
 
 current_time = time.time()
 
-# --- SIDEBAR CONTROLS ---
 with st.sidebar:
     st.markdown("## 💜")
     st.info(
-        "- **Enter a hashtag or keyword**\n"
-        "- **Choose number of tweets (10–100)**\n"
-        "- **Click 'Fetch Tweets' to analyze**\n\n"
-        "- 'Pissed-offness Metric': +1 = Pissed off, -1 = Amused\n"
-        "- Avoid frequent requests to prevent a cooldown"
+        "- **Enter a hashtag or keyword.**\n"
+        "- **Choose number of tweets (10–100).**\n"
+        "- **Click 'Fetch Tweets' to analyze.**\n"
+        "- 'Pissed-offness': +1 = Pissed off, -1 = Amused.\n"
+        "- Avoid frequent requests to prevent a 15-min cooldown."
     )
     query = st.text_input("Keyword/Hashtag", "#python")
     tweet_limit = st.slider(
         "Number of Tweets to Fetch", 10, 100, 10, step=1, key="tweet_limit_slider"
     )
+    # Disable fetch during cooldown, always allow cached browsing
     if current_time < st.session_state["cooldown_until"]:
         wait = int(st.session_state["cooldown_until"] - current_time)
         fetch_button = st.button("Fetch Tweets", disabled=True)
@@ -62,10 +57,9 @@ with st.sidebar:
 
 if not BEARER_TOKEN:
     st.warning(
-        "**Twitter Bearer Token not found.** Add your token in Streamlit Secrets Manager as `TWITTER_BEARER_TOKEN`."
+        "Twitter Bearer Token not found. Add your token in Streamlit Secrets Manager as `TWITTER_BEARER_TOKEN`."
     )
 
-# --- Twitter API Setup ---
 client = None
 if BEARER_TOKEN:
     try:
@@ -73,7 +67,6 @@ if BEARER_TOKEN:
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
-# --- Helper Functions ---
 def clean_text(text):
     import re
     text = re.sub(r"http\S+", "", text)
@@ -82,12 +75,13 @@ def clean_text(text):
     return text.strip()
 
 def liwc_like_categories(text):
+    # Basic LIWC-like mapping; swap/extend/replace with real LIWC or NRC data as desired
     positive_words = set(["great","good","happy","love","fun","cool","amazing","excellent","smile"])
     negative_words = set(["bad","hate","angry","upset","sad","fail","worst","annoy","awful"])
-    social_words = set(["friend","team","group","everyone","together","support","we"])
-    cognitive_words = set(["think","know","consider","believe","idea","understand","reason"])
-    affect_words = set(["love","hate","amaze","fear","angry","joy","sad","happy"])
-    words = set(word_tokenize(text.lower()))
+    social_words   = set(["friend","team","group","everyone","together","support","we"])
+    cognitive_words= set(["think","know","consider","believe","idea","understand","reason"])
+    affect_words   = set(["love","hate","amaze","fear","angry","joy","sad","happy"])
+    words = set(word_tokenize(str(text).lower()))
     return {
         "Positive Emotion": len(positive_words & words),
         "Negative Emotion": len(negative_words & words),
@@ -109,9 +103,9 @@ def generate_wordcloud(tweets):
 
 @st.cache_data
 def fetch_and_analyze(query, tweet_limit):
-    tweets, headers, amuse, pissed, times, liwc_scores = [], [], [], [], [], []
+    tweets, pissed, amuse, times, liwc_scores = [], [], [], [], []
     if not BEARER_TOKEN or not client:
-        return pd.DataFrame(columns=["Header", "Body", "Timestamp", "Pissed-offness", "Amusement", "LIWC"])
+        return pd.DataFrame()
     tweet_limit = max(10, min(tweet_limit, 100))
     try:
         response = client.search_recent_tweets(
@@ -123,27 +117,24 @@ def fetch_and_analyze(query, tweet_limit):
             for tweet in response.data:
                 lang = getattr(tweet, "lang", None)
                 if lang is None or lang == "en":
-                    raw = tweet.text
-                    header = (raw[:60] + "...") if len(raw) > 60 else raw
-                    body = clean_text(raw)
-                    polarity = TextBlob(body).sentiment.polarity
-                    amuse_score = round(-polarity, 3)
-                    pissed_score = round(polarity * -1, 3)
-                    scores = liwc_like_categories(body)
-                    tweets.append(raw)
-                    headers.append(header)
-                    amuse.append(amuse_score)
+                    text = tweet.text
+                    polarity = TextBlob(text).sentiment.polarity
+                    # Pissed-offness: +1 = pissed off, -1 = amused
+                    pissed_score = round(-polarity, 3)
+                    amuse_score = round(polarity, 3)
+                    liwc = liwc_like_categories(text)
+                    tweets.append(text)
                     pissed.append(pissed_score)
+                    amuse.append(amuse_score)
+                    liwc_scores.append(liwc)
                     times.append(tweet.created_at)
-                    liwc_scores.append(scores)
     except tweepy.TooManyRequests:
         st.session_state["cooldown_until"] = time.time() + 15 * 60
         st.error("Twitter API rate limit exceeded. Please wait 15 minutes before trying again.")
     except Exception as e:
         st.error(f"Error fetching tweets: {e}")
     df = pd.DataFrame({
-        "Header": headers,
-        "Body": tweets,
+        "Tweet": tweets,
         "Timestamp": times,
         "Pissed-offness": pissed,
         "Amusement": amuse,
@@ -153,67 +144,77 @@ def fetch_and_analyze(query, tweet_limit):
 
 def display_metrics(df):
     avg_pissed = df["Pissed-offness"].mean() if not df.empty else 0
-    avg_pissed_pct = abs(avg_pissed) * 100
+    avg_pct = abs(avg_pissed) * 100
     if avg_pissed >= 0:
-        metric_label = f"{avg_pissed_pct:.0f}% Pissed off"
-        explanation = "(+100 = maximum pissed off, -100 = maximum amused, 0 = neutral)"
+        metric_label = f"{avg_pct:.0f}% Pissed off"
+        explanation = "(+100 = max pissed off, -100 = max amused, 0 = neutral)"
     else:
-        metric_label = f"{avg_pissed_pct:.0f}% Amused"
-        explanation = "(+100 = maximum pissed off, -100 = maximum amused, 0 = neutral)"
+        metric_label = f"{avg_pct:.0f}% Amused"
+        explanation = "(+100 = max pissed off, -100 = max amused, 0 = neutral)"
     num_amused = (df["Pissed-offness"] < -0.05).sum()
     num_pissed = (df["Pissed-offness"] > 0.05).sum()
-    amused_pct = 100 * num_amused / len(df)
-    pissed_pct = 100 * num_pissed / len(df)
-    neutral_pct = 100 - amused_pct - pissed_pct
+    amused_pct = 100 * num_amused / len(df) if len(df) > 0 else 0
+    pissed_pct = 100 * num_pissed / len(df) if len(df) > 0 else 0
     c1, c2, c3 = st.columns(3)
     c1.metric("Pissed-offness metric", metric_label, help=explanation)
     c2.metric("Amused Tweets", f"{amused_pct:.1f}%")
     c3.metric("Pissed Off Tweets", f"{pissed_pct:.1f}%")
 
 def display_dashboard(df):
-    gb = GridOptionsBuilder.from_dataframe(df[["Header", "Pissed-offness", "Amusement", "Timestamp"]])
-    gb.configure_selection(selection_mode="single", use_checkbox=False)
-    gb.configure_pagination()
-    grid_options = gb.build()
-    ag_grid = AgGrid(df[["Header", "Pissed-offness", "Amusement", "Timestamp"]],
-                     gridOptions=grid_options, height=290, theme="material")
-    if ag_grid['selected_rows']:
-        idx = ag_grid['selected_rows'][0]['_selectedRowNodeInfo']['nodeRowIndex']
-        row = df.iloc[idx]
-    else:
-        row = df.iloc[0]
-    st.markdown(f"**{row['Header']}**")
-    st.markdown(f"<span style='font-size:0.92em'>{clean_text(row['Body'])}</span>", unsafe_allow_html=True)
-    st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f} | Amusement: {row['Amusement']:+.2f}")
+    st.write("#### Tweets (click for details)")
+    # Table with selectable rows
+    df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
+    selected = st.selectbox("Select a tweet below to see details and LIWC features:",
+                            range(len(df)), format_func=lambda i: df.iloc[i]["Short Tweet"] if not df.empty else "")
+    row = df.iloc[selected] if len(df) > 0 else None
     display_metrics(df)
-    feature_obj = [{"value": v, "name": k} for k, v in row['LIWC'].items()]
-    st_echarts({
-        "title": {"text": "LIWC-Style Theme Breakdown", "left": "center"},
-        "tooltip": {},
-        "legend": {"top": "bottom"},
-        "series": [
-            {
-                "name": "Category",
-                "type": "pie",
-                "radius": ["30%", "60%"],
-                "roseType": "area",
-                "data": feature_obj,
-                "label": {"show": True, "fontSize": 16},
-            }
-        ],
-    }, height="350px")
-    line_chart = alt.Chart(df).mark_line(point=True).encode(
-        x=alt.X('Timestamp:T', title="Time", axis=alt.Axis(labelAngle=-45)),
-        y=alt.Y('Pissed-offness:Q', title="Pissed-offness"),
-        tooltip=["Header", "Pissed-offness", "Amusement", "Timestamp"]
-    ).properties(width=720, title="Pissed-offness Over Time")
-    st.altair_chart(line_chart, use_container_width=True)
+
+    if row is not None:
+        st.markdown(f"**{row['Short Tweet']}**")
+        st.code(row["Tweet"], language="markdown")
+        st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f}")
+        # LIWC-style bar chart
+        st.write("##### LIWC-style Feature Analysis:")
+        feat_df = pd.DataFrame(list(row['LIWC'].items()), columns=["Category", "Count"])
+        liwc_fig = px.bar(feat_df, x="Category", y="Count", color="Count", color_continuous_scale=PURPLE_PALETTE,
+                          title="LIWC-style Psychological Categories")
+        liwc_fig.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
+        st.plotly_chart(liwc_fig, use_container_width=True)
+
+        # 3D scatter: Tweet index, Pissed-offness, Time
+        st.write("##### 3D Visualization: Tweet # vs Pissed-offness vs Time")
+        z_time = pd.to_datetime(df["Timestamp"]).astype(int) // 10**9
+        fig3d = go.Figure(data=[go.Scatter3d(
+            x=list(range(len(df))),
+            y=df["Pissed-offness"],
+            z=z_time,
+            mode="markers",
+            marker=dict(size=7, color=df["Pissed-offness"], colorscale=PURPLE_PALETTE, opacity=0.8),
+            text=df["Short Tweet"]
+        )])
+        fig3d.update_layout(
+            scene=dict(xaxis_title="Tweet #", yaxis_title="Pissed-offness", zaxis_title="Timestamp"),
+            paper_bgcolor=PURPLE_BG,
+            font=dict(color="#2D1A47"), width=800, height=460
+        )
+        st.plotly_chart(fig3d, use_container_width=True)
+
+    # Word cloud for all fetched tweets
     st.markdown("### Word Cloud Overview")
-    wordcloud_img = generate_wordcloud([clean_text(t) for t in df["Body"]])
+    wordcloud_img = generate_wordcloud([str(t) for t in df["Tweet"]])
     st.image(f"data:image/png;base64,{wordcloud_img}", use_column_width=True, caption="Words across tweets")
+
+    # Pissed-offness over time line
+    trend = px.line(df, x="Timestamp", y="Pissed-offness", title="Pissed-offness Metric Trend",
+                    markers=True, color_discrete_sequence=PURPLE_PALETTE)
+    trend.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
+    st.plotly_chart(trend, use_container_width=True)
+
+    # Download session/cached data
     csv_data = df.to_csv(index=False)
     st.download_button("Download Session Tweets (CSV)", csv_data, file_name="twitter_nlp_dashboard.csv")
 
+# --- Main Logic: Handle new fetch or review cached data ---
 if fetch_button:
     if current_time < st.session_state["cooldown_until"]:
         wait = int(st.session_state["cooldown_until"] - current_time)
@@ -221,18 +222,18 @@ if fetch_button:
     else:
         df = fetch_and_analyze(query, tweet_limit)
         st.session_state['tweets_df'] = df  # Cache last fetch
-
         if not BEARER_TOKEN:
-            st.warning("Bearer Token missing—live data fetch won't work until added in Streamlit Cloud's Secrets.")
+            st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
         elif df.empty:
             st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
         else:
             st.subheader("🟣 Live Tweets")
             display_dashboard(df)
 else:
-    # UI to allow reviewing cached data even during cooldown/rate limit
-    if st.session_state.get('tweets_df') is not None and not st.session_state['tweets_df'].empty:
-        st.info("🔁 Showing last fetched tweets from session cache. No API request used. (You are not using up your quota.)")
-        display_dashboard(st.session_state['tweets_df'])
+    # View cached data any time without using rate limit
+    df = st.session_state.get('tweets_df')
+    if df is not None and not df.empty:
+        st.info("🔁 Reviewing last fetched tweets from session cache. No API request is used.")
+        display_dashboard(df)
     else:
         st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
