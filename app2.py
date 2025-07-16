@@ -10,7 +10,7 @@ import tweepy
 from wordcloud import WordCloud
 import nltk
 
-# --- NLTK Setup ---
+# --- NLTK Download Setup ---
 nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
 os.makedirs(nltk_data_dir, exist_ok=True)
 if nltk_data_dir not in nltk.data.path:
@@ -43,10 +43,9 @@ with st.sidebar:
     st.info(
         "- **Enter a hashtag or keyword.**\n"
         "- **Choose number of tweets (10–100).**\n"
-        "- **Click 'Fetch Tweets' to analyze.**\n"
-        "- Dropdown will display the fetched tweets for selection and analysis.\n"
+        "- Tweets shown in dropdown; select for analysis.\n"
         "- 'Pissed-offness': +1 = Pissed off, -1 = Amused.\n"
-        "- Avoid frequent requests to prevent a 15-min cooldown."
+        "- Fetch infrequently to avoid Twitter API cooldown (15 min after limit)."
     )
     query = st.text_input("Keyword/Hashtag", "#python")
     tweet_limit = st.slider(
@@ -67,7 +66,7 @@ if not BEARER_TOKEN:
 client = None
 if BEARER_TOKEN:
     try:
-        client = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=True)
+        client = tweepy.Client(bearer_token=BEARER_TOKEN)
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
@@ -122,9 +121,15 @@ def fetch_and_cache_tweets(query, tweet_limit):
                 if lang is None or lang == "en":
                     tweets.append(tweet.text)
                     timestamps.append(tweet.created_at)
-    except tweepy.errors.TooManyRequests:
-        st.session_state["cooldown_until"] = time.time() + 15 * 60
-        st.warning("Twitter API rate limit exceeded. Please wait 15 minutes before trying again. You can review cached data below.")
+    except tweepy.errors.TooManyRequests as e:
+        # Get x-rate-limit-reset if available; else set 15 min from now
+        headers = getattr(e, "response", None)
+        reset_ts = 0
+        if headers and hasattr(headers, "headers"):
+            reset_ts = int(headers.headers.get("x-rate-limit-reset", 0))
+        wait_sec = max(reset_ts - time.time(), 900) if reset_ts else 900
+        st.session_state["cooldown_until"] = time.time() + wait_sec
+        st.warning(f"Twitter API rate limit exceeded. Please wait {int(wait_sec // 60)} min {int(wait_sec % 60)} sec before trying again.")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"Error fetching tweets: {e}")
@@ -132,7 +137,7 @@ def fetch_and_cache_tweets(query, tweet_limit):
     df = pd.DataFrame({'Tweet': tweets, 'Timestamp': timestamps})
     return df
 
-def display_metrics(df, pissed_scores):
+def display_metrics(pissed_scores):
     if len(pissed_scores) > 0:
         num_amused = sum(1 for x in pissed_scores if x < -0.05)
         num_pissed = sum(1 for x in pissed_scores if x > 0.05)
@@ -157,7 +162,6 @@ def display_dashboard(df):
     if df.empty:
         st.info("No tweets found for your query. Try a different keyword or wait for new tweets.")
         return
-
     st.write("#### Fetched Tweets")
     df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
     tweet_choices = [(i, df.iloc[i]['Short Tweet']) for i in range(len(df))]
@@ -170,11 +174,10 @@ def display_dashboard(df):
     selected_text = selected_row["Tweet"]
     selected_time = selected_row["Timestamp"]
 
-    # NLP Analysis (performed on all tweets for metrics and selected for visuals)
+    # NLP Analysis (bulk for overall metrics, per-tweet for visuals)
     pissed_scores = []
     amuse_scores = []
     liwc_list = []
-
     for tweet in df["Tweet"]:
         polarity = TextBlob(tweet).sentiment.polarity
         pissed_score = round(-polarity, 3)
@@ -183,10 +186,8 @@ def display_dashboard(df):
         pissed_scores.append(pissed_score)
         amuse_scores.append(amuse_score)
         liwc_list.append(liwc)
-
     # Metrics for all tweets
-    display_metrics(df, pissed_scores)
-
+    display_metrics(pissed_scores)
     # Selected tweet analysis
     st.markdown(f"**{selected_row['Short Tweet']}**")
     st.code(selected_text, language="markdown")
@@ -209,7 +210,6 @@ def display_dashboard(df):
     )
     st.plotly_chart(sel_liwc_fig, use_container_width=True)
 
-    # LIWC summary chart for all tweets
     st.markdown("##### Overall LIWC Feature Summary")
     all_liwc_summary = pd.DataFrame(liwc_list).sum().reset_index()
     all_liwc_summary.columns = ["Category", "Total Count"]
@@ -235,7 +235,6 @@ def display_dashboard(df):
     wordcloud_img = generate_wordcloud([str(t) for t in df["Tweet"]])
     st.image(f"data:image/png;base64,{wordcloud_img}", caption="Words across tweets")
 
-    # Metric trend chart
     metric_df = df.copy()
     metric_df["Pissed-offness"] = pissed_scores
     metric_trend = px.line(
