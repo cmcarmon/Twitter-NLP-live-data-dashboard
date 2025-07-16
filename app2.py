@@ -4,13 +4,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 import altair as alt
 import time
-from textblob import TextBlob
-import tweepy
 import base64
 from io import BytesIO
+from textblob import TextBlob
+import tweepy
 from wordcloud import WordCloud
 
-# Ensure NLTK resources
+# --- NLTK Download Fix (for TextBlob/NLP) ---
 import nltk
 nltk.download('punkt', quiet=True)
 nltk.download('stopwords', quiet=True)
@@ -23,10 +23,8 @@ PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
 
-# BEARER_TOKEN from Streamlit Cloud secrets
 BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", "")
 
-# Session state: cooldown and cache
 if "cooldown_until" not in st.session_state:
     st.session_state["cooldown_until"] = 0
 if "tweets_df" not in st.session_state:
@@ -47,7 +45,6 @@ with st.sidebar:
     tweet_limit = st.slider(
         "Number of Tweets to Fetch", 10, 100, 10, step=1, key="tweet_limit_slider"
     )
-    # Disable fetch during cooldown, always allow cached browsing
     if current_time < st.session_state["cooldown_until"]:
         wait = int(st.session_state["cooldown_until"] - current_time)
         fetch_button = st.button("Fetch Tweets", disabled=True)
@@ -60,10 +57,11 @@ if not BEARER_TOKEN:
         "Twitter Bearer Token not found. Add your token in Streamlit Secrets Manager as `TWITTER_BEARER_TOKEN`."
     )
 
+# --- Tweepy Client: turn OFF internal sleep ---
 client = None
 if BEARER_TOKEN:
     try:
-        client = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=True)
+        client = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=False)
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
@@ -75,7 +73,6 @@ def clean_text(text):
     return text.strip()
 
 def liwc_like_categories(text):
-    # Basic LIWC-like mapping; swap/extend/replace with real LIWC or NRC data as desired
     positive_words = set(["great","good","happy","love","fun","cool","amazing","excellent","smile"])
     negative_words = set(["bad","hate","angry","upset","sad","fail","worst","annoy","awful"])
     social_words   = set(["friend","team","group","everyone","together","support","we"])
@@ -119,7 +116,6 @@ def fetch_and_analyze(query, tweet_limit):
                 if lang is None or lang == "en":
                     text = tweet.text
                     polarity = TextBlob(text).sentiment.polarity
-                    # Pissed-offness: +1 = pissed off, -1 = amused
                     pissed_score = round(-polarity, 3)
                     amuse_score = round(polarity, 3)
                     liwc = liwc_like_categories(text)
@@ -130,9 +126,11 @@ def fetch_and_analyze(query, tweet_limit):
                     times.append(tweet.created_at)
     except tweepy.TooManyRequests:
         st.session_state["cooldown_until"] = time.time() + 15 * 60
-        st.error("Twitter API rate limit exceeded. Please wait 15 minutes before trying again.")
+        st.warning("Twitter API rate limit exceeded. Please wait 15 minutes before trying again. You can review cached data below.")
+        return pd.DataFrame()
     except Exception as e:
         st.error(f"Error fetching tweets: {e}")
+        return pd.DataFrame()
     df = pd.DataFrame({
         "Tweet": tweets,
         "Timestamp": times,
@@ -162,9 +160,8 @@ def display_metrics(df):
 
 def display_dashboard(df):
     st.write("#### Tweets (click for details)")
-    # Table with selectable rows
     df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
-    selected = st.selectbox("Select a tweet below to see details and LIWC features:",
+    selected = st.selectbox("Select a tweet to see details and LIWC features:",
                             range(len(df)), format_func=lambda i: df.iloc[i]["Short Tweet"] if not df.empty else "")
     row = df.iloc[selected] if len(df) > 0 else None
     display_metrics(df)
@@ -173,7 +170,6 @@ def display_dashboard(df):
         st.markdown(f"**{row['Short Tweet']}**")
         st.code(row["Tweet"], language="markdown")
         st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f}")
-        # LIWC-style bar chart
         st.write("##### LIWC-style Feature Analysis:")
         feat_df = pd.DataFrame(list(row['LIWC'].items()), columns=["Category", "Count"])
         liwc_fig = px.bar(feat_df, x="Category", y="Count", color="Count", color_continuous_scale=PURPLE_PALETTE,
@@ -181,7 +177,6 @@ def display_dashboard(df):
         liwc_fig.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
         st.plotly_chart(liwc_fig, use_container_width=True)
 
-        # 3D scatter: Tweet index, Pissed-offness, Time
         st.write("##### 3D Visualization: Tweet # vs Pissed-offness vs Time")
         z_time = pd.to_datetime(df["Timestamp"]).astype(int) // 10**9
         fig3d = go.Figure(data=[go.Scatter3d(
@@ -199,42 +194,37 @@ def display_dashboard(df):
         )
         st.plotly_chart(fig3d, use_container_width=True)
 
-    # Word cloud for all fetched tweets
     st.markdown("### Word Cloud Overview")
     wordcloud_img = generate_wordcloud([str(t) for t in df["Tweet"]])
     st.image(f"data:image/png;base64,{wordcloud_img}", use_column_width=True, caption="Words across tweets")
 
-    # Pissed-offness over time line
     trend = px.line(df, x="Timestamp", y="Pissed-offness", title="Pissed-offness Metric Trend",
                     markers=True, color_discrete_sequence=PURPLE_PALETTE)
     trend.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
     st.plotly_chart(trend, use_container_width=True)
 
-    # Download session/cached data
     csv_data = df.to_csv(index=False)
     st.download_button("Download Session Tweets (CSV)", csv_data, file_name="twitter_nlp_dashboard.csv")
 
-# --- Main Logic: Handle new fetch or review cached data ---
 if fetch_button:
     if current_time < st.session_state["cooldown_until"]:
         wait = int(st.session_state["cooldown_until"] - current_time)
         st.warning(f"Rate limit in effect. Please wait {wait//60} min {wait%60} sec before trying again.")
     else:
         df = fetch_and_analyze(query, tweet_limit)
-        st.session_state['tweets_df'] = df  # Cache last fetch
+        if not df.empty:
+            st.session_state['tweets_df'] = df  # Cache last fetch
         if not BEARER_TOKEN:
             st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
-        elif df.empty:
+        elif df is None or df.empty:
             st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
         else:
             st.subheader("🟣 Live Tweets")
             display_dashboard(df)
 else:
-    # View cached data any time without using rate limit
     df = st.session_state.get('tweets_df')
     if df is not None and not df.empty:
         st.info("🔁 Reviewing last fetched tweets from session cache. No API request is used.")
         display_dashboard(df)
     else:
         st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
-
