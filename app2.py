@@ -214,6 +214,8 @@ if fetch_button:
         df = fetch_and_analyze(query, tweet_limit)
         if not df.empty:
             st.session_state['tweets_df'] = df  # Cache last fetch
+            # Only clear cooldown after a successful, non-rate-limited fetch
+            st.session_state["cooldown_until"] = 0
         if not BEARER_TOKEN:
             st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
         elif df is None or df.empty:
