@@ -57,7 +57,6 @@ if not BEARER_TOKEN:
         "Twitter Bearer Token not found. Add your token in Streamlit Secrets Manager as `TWITTER_BEARER_TOKEN`."
     )
 
-# --- Tweepy Client: No Internal Sleep ---
 client = None
 if BEARER_TOKEN:
     try:
@@ -214,8 +213,7 @@ if fetch_button:
         df = fetch_and_analyze(query, tweet_limit)
         if not df.empty:
             st.session_state['tweets_df'] = df  # Cache last fetch
-            # Only clear cooldown after a successful, non-rate-limited fetch
-            st.session_state["cooldown_until"] = 0
+            st.session_state["cooldown_until"] = 0  # Clear cooldown after success
         if not BEARER_TOKEN:
             st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
         elif df is None or df.empty:
