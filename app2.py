@@ -8,10 +8,9 @@ from io import BytesIO
 from textblob import TextBlob
 import tweepy
 from wordcloud import WordCloud
-
-# --- Robust NLTK Setup ---
 import nltk
 
+# --- NLTK Robust Setup ---
 nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
 os.makedirs(nltk_data_dir, exist_ok=True)
 if nltk_data_dir not in nltk.data.path:
@@ -44,7 +43,7 @@ with st.sidebar:
         "- **Enter a hashtag or keyword.**\n"
         "- **Choose number of tweets (10–100).**\n"
         "- **Click 'Fetch Tweets' to analyze.**\n"
-        "- Only sufficiently long tweets (min 40 words) are analyzed.\n"
+        "- Only text-heavy tweets (min 40 words) are analyzed.\n"
         "- 'Pissed-offness': +1 = Pissed off, -1 = Amused.\n"
         "- Avoid frequent requests to prevent a 15-min cooldown."
     )
@@ -67,7 +66,7 @@ if not BEARER_TOKEN:
 client = None
 if BEARER_TOKEN:
     try:
-        client = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=False)
+        client = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=True)
     except Exception as e:
         st.error(f"Error creating Tweepy client: {e}")
 
@@ -135,7 +134,7 @@ def fetch_and_analyze(query, tweet_limit):
                     amuse.append(amuse_score)
                     liwc_scores.append(liwc)
                     times.append(tweet.created_at)
-    except tweepy.TooManyRequests:
+    except tweepy.errors.TooManyRequests:
         st.session_state["cooldown_until"] = time.time() + 15 * 60
         st.warning("Twitter API rate limit exceeded. Please wait 15 minutes before trying again. You can review cached data below.")
         return pd.DataFrame()
@@ -194,9 +193,8 @@ def display_dashboard(df):
 
     st.markdown("### Word Cloud Overview")
     wordcloud_img = generate_wordcloud([str(t) for t in df["Tweet"]])
-    st.image(f"data:image/png;base64,{wordcloud_img}", use_column_width=True, caption="Words across tweets")
+    st.image(f"data:image/png;base64,{wordcloud_img}", caption="Words across tweets")
 
-    # Main metric trend visualization (2D, clearer than 3D)
     trend = px.line(df, x="Timestamp", y="Pissed-offness", title="Pissed-offness Metric Trend (Text-Heavy Tweets)",
                     markers=True, color_discrete_sequence=PURPLE_PALETTE)
     trend.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
