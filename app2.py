@@ -2,7 +2,6 @@ import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import time
 import base64
 from io import BytesIO
@@ -13,23 +12,17 @@ from wordcloud import WordCloud
 # --- Robust NLTK Setup ---
 import nltk
 
-# Create (or use) a local nltk_data folder for resource downloads
 nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
 os.makedirs(nltk_data_dir, exist_ok=True)
-
-# Ensure nltk looks for data here first
 if nltk_data_dir not in nltk.data.path:
     nltk.data.path.insert(0, nltk_data_dir)
-
-# Download needed NLTK resources quietly (halts if already downloaded)
 nltk.download("punkt", download_dir=nltk_data_dir, quiet=True)
-nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)  # critical fix for recent NLTK versions
+nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)
 nltk.download("stopwords", download_dir=nltk_data_dir, quiet=True)
 
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
-# --- UI and Styling ---
 PURPLE_BG = "#F3F0FF"
 PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 
@@ -51,6 +44,7 @@ with st.sidebar:
         "- **Enter a hashtag or keyword.**\n"
         "- **Choose number of tweets (10–100).**\n"
         "- **Click 'Fetch Tweets' to analyze.**\n"
+        "- Only sufficiently long tweets (min 40 words) are analyzed.\n"
         "- 'Pissed-offness': +1 = Pissed off, -1 = Amused.\n"
         "- Avoid frequent requests to prevent a 15-min cooldown."
     )
@@ -84,12 +78,17 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
+def is_text_heavy(tweet, min_words=40):
+    clean = clean_text(tweet)
+    word_count = len(clean.split())
+    return word_count >= min_words
+
 def liwc_like_categories(text):
-    positive_words = set(["great","good","happy","love","fun","cool","amazing","excellent","smile"])
-    negative_words = set(["bad","hate","angry","upset","sad","fail","worst","annoy","awful"])
-    social_words   = set(["friend","team","group","everyone","together","support","we"])
-    cognitive_words= set(["think","know","consider","believe","idea","understand","reason"])
-    affect_words   = set(["love","hate","amaze","fear","angry","joy","sad","happy"])
+    positive_words = set(["great", "good", "happy", "love", "fun", "cool", "amazing", "excellent", "smile"])
+    negative_words = set(["bad", "hate", "angry", "upset", "sad", "fail", "worst", "annoy", "awful"])
+    social_words   = set(["friend", "team", "group", "everyone", "together", "support", "we"])
+    cognitive_words= set(["think", "know", "consider", "believe", "idea", "understand", "reason"])
+    affect_words   = set(["love", "hate", "amaze", "fear", "angry", "joy", "sad", "happy"])
     words = set(word_tokenize(str(text).lower()))
     return {
         "Positive Emotion": len(positive_words & words),
@@ -125,8 +124,8 @@ def fetch_and_analyze(query, tweet_limit):
         if response.data is not None:
             for tweet in response.data:
                 lang = getattr(tweet, "lang", None)
-                if lang is None or lang == "en":
-                    text = tweet.text
+                text = tweet.text
+                if (lang is None or lang == "en") and is_text_heavy(text, min_words=40):
                     polarity = TextBlob(text).sentiment.polarity
                     pissed_score = round(-polarity, 3)
                     amuse_score = round(polarity, 3)
@@ -171,8 +170,12 @@ def display_metrics(df):
     c3.metric("Pissed Off Tweets", f"{pissed_pct:.1f}%")
 
 def display_dashboard(df):
-    st.write("#### Tweets (click for details)")
-    df["Short Tweet"] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
+    if df.empty:
+        st.info("No tweets met the minimum length requirement for analysis. Try a different keyword or fetch more tweets.")
+        return
+
+    st.write("#### Filtered Tweets (long-form, text-heavy only)")
+    df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
     selected = st.selectbox("Select a tweet to see details and LIWC features:",
                             range(len(df)), format_func=lambda i: df.iloc[i]["Short Tweet"] if not df.empty else "")
     row = df.iloc[selected] if len(df) > 0 else None
@@ -183,34 +186,18 @@ def display_dashboard(df):
         st.code(row["Tweet"], language="markdown")
         st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f}")
         st.write("##### LIWC-style Feature Analysis:")
-        feat_df = pd.DataFrame(list(row["LIWC"].items()), columns=["Category", "Count"])
+        feat_df = pd.DataFrame(list(row['LIWC'].items()), columns=["Category", "Count"])
         liwc_fig = px.bar(feat_df, x="Category", y="Count", color="Count", color_continuous_scale=PURPLE_PALETTE,
                           title="LIWC-style Psychological Categories")
         liwc_fig.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
         st.plotly_chart(liwc_fig, use_container_width=True)
 
-        st.write("##### 3D Visualization: Tweet # vs Pissed-offness vs Time")
-        z_time = pd.to_datetime(df["Timestamp"]).astype(int) // 10**9
-        fig3d = go.Figure(data=[go.Scatter3d(
-            x=list(range(len(df))),
-            y=df["Pissed-offness"],
-            z=z_time,
-            mode="markers",
-            marker=dict(size=7, color=df["Pissed-offness"], colorscale=PURPLE_PALETTE, opacity=0.8),
-            text=df["Short Tweet"]
-        )])
-        fig3d.update_layout(
-            scene=dict(xaxis_title="Tweet #", yaxis_title="Pissed-offness", zaxis_title="Timestamp"),
-            paper_bgcolor=PURPLE_BG,
-            font=dict(color="#2D1A47"), width=800, height=460
-        )
-        st.plotly_chart(fig3d, use_container_width=True)
-
     st.markdown("### Word Cloud Overview")
     wordcloud_img = generate_wordcloud([str(t) for t in df["Tweet"]])
     st.image(f"data:image/png;base64,{wordcloud_img}", use_column_width=True, caption="Words across tweets")
 
-    trend = px.line(df, x="Timestamp", y="Pissed-offness", title="Pissed-offness Metric Trend",
+    # Main metric trend visualization (2D, clearer than 3D)
+    trend = px.line(df, x="Timestamp", y="Pissed-offness", title="Pissed-offness Metric Trend (Text-Heavy Tweets)",
                     markers=True, color_discrete_sequence=PURPLE_PALETTE)
     trend.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
     st.plotly_chart(trend, use_container_width=True)
@@ -225,17 +212,17 @@ if fetch_button:
     else:
         df = fetch_and_analyze(query, tweet_limit)
         if not df.empty:
-            st.session_state["tweets_df"] = df  # Cache last fetch
+            st.session_state['tweets_df'] = df  # Cache last fetch
             st.session_state["cooldown_until"] = 0  # Clear cooldown after success
         if not BEARER_TOKEN:
             st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
         elif df is None or df.empty:
-            st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
+            st.warning("No suitable tweets found. Try a popular keyword or increase tweet limit.")
         else:
-            st.subheader("🟣 Live Tweets")
+            st.subheader("🟣 Live Tweets (Long-form Only)")
             display_dashboard(df)
 else:
-    df = st.session_state.get("tweets_df")
+    df = st.session_state.get('tweets_df')
     if df is not None and not df.empty:
         st.info("🔁 Reviewing last fetched tweets from session cache. No API request is used.")
         display_dashboard(df)
