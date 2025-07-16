@@ -237,3 +237,4 @@ else:
         display_dashboard(df)
     else:
         st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
+

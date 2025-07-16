@@ -1,6 +1,6 @@
 {
-  "name": "Twitter NLP Streamlit-  Python 3.13",
-"image": "mcr.microsoft.com/devcontainers/python:1-3.11-bullseye",
+  "name": "Twitter NLP Streamlit in Python",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bullseye",
   "customizations": {
     "codespaces": { "openFiles": [ "README.md", "app2.py" ] },
     "vscode": { "settings": {}, "extensions": [ "ms-python.python", "ms-python.vscode-pylance" ] }
