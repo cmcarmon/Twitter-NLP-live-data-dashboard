@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -10,11 +11,19 @@ from textblob import TextBlob
 import tweepy
 from wordcloud import WordCloud
 
-# --- NLTK Download for required NLP resources ---
+# --- Robust NLTK Downloader Setup ---
 import nltk
-nltk.download('punkt', quiet=True)
-nltk.download('punkt_tab', quiet=True)
-nltk.download('stopwords', quiet=True)
+
+# Optionally specify a custom nltk_data directory to ensure writability
+nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+os.makedirs(nltk_data_dir, exist_ok=True)
+nltk.data.path.append(nltk_data_dir)
+
+# ALWAYS download all required resources, quiet background install
+nltk.download('punkt', download_dir=nltk_data_dir, quiet=True)
+nltk.download('punkt_tab', download_dir=nltk_data_dir, quiet=True)  # For NLTK >= 3.8.2
+nltk.download('stopwords', download_dir=nltk_data_dir, quiet=True)
+
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
@@ -229,3 +238,4 @@ else:
         display_dashboard(df)
     else:
         st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
+
