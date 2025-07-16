@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import altair as alt
 import time
 import base64
 from io import BytesIO
@@ -11,22 +10,26 @@ from textblob import TextBlob
 import tweepy
 from wordcloud import WordCloud
 
-# --- Robust NLTK Downloader Setup ---
+# --- Robust NLTK Setup ---
 import nltk
 
-# Optionally specify a custom nltk_data directory to ensure writability
-nltk_data_dir = os.path.join(os.getcwd(), 'nltk_data')
+# Create (or use) a local nltk_data folder for resource downloads
+nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
 os.makedirs(nltk_data_dir, exist_ok=True)
-nltk.data.path.append(nltk_data_dir)
 
-# ALWAYS download all required resources, quiet background install
-nltk.download('punkt', download_dir=nltk_data_dir, quiet=True)
-nltk.download('punkt_tab', download_dir=nltk_data_dir, quiet=True)  # For NLTK >= 3.8.2
-nltk.download('stopwords', download_dir=nltk_data_dir, quiet=True)
+# Ensure nltk looks for data here first
+if nltk_data_dir not in nltk.data.path:
+    nltk.data.path.insert(0, nltk_data_dir)
+
+# Download needed NLTK resources quietly (halts if already downloaded)
+nltk.download("punkt", download_dir=nltk_data_dir, quiet=True)
+nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)  # critical fix for recent NLTK versions
+nltk.download("stopwords", download_dir=nltk_data_dir, quiet=True)
 
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 
+# --- UI and Styling ---
 PURPLE_BG = "#F3F0FF"
 PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
 
@@ -169,7 +172,7 @@ def display_metrics(df):
 
 def display_dashboard(df):
     st.write("#### Tweets (click for details)")
-    df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
+    df["Short Tweet"] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
     selected = st.selectbox("Select a tweet to see details and LIWC features:",
                             range(len(df)), format_func=lambda i: df.iloc[i]["Short Tweet"] if not df.empty else "")
     row = df.iloc[selected] if len(df) > 0 else None
@@ -180,7 +183,7 @@ def display_dashboard(df):
         st.code(row["Tweet"], language="markdown")
         st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f}")
         st.write("##### LIWC-style Feature Analysis:")
-        feat_df = pd.DataFrame(list(row['LIWC'].items()), columns=["Category", "Count"])
+        feat_df = pd.DataFrame(list(row["LIWC"].items()), columns=["Category", "Count"])
         liwc_fig = px.bar(feat_df, x="Category", y="Count", color="Count", color_continuous_scale=PURPLE_PALETTE,
                           title="LIWC-style Psychological Categories")
         liwc_fig.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
@@ -222,7 +225,7 @@ if fetch_button:
     else:
         df = fetch_and_analyze(query, tweet_limit)
         if not df.empty:
-            st.session_state['tweets_df'] = df  # Cache last fetch
+            st.session_state["tweets_df"] = df  # Cache last fetch
             st.session_state["cooldown_until"] = 0  # Clear cooldown after success
         if not BEARER_TOKEN:
             st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
@@ -232,10 +235,9 @@ if fetch_button:
             st.subheader("🟣 Live Tweets")
             display_dashboard(df)
 else:
-    df = st.session_state.get('tweets_df')
+    df = st.session_state.get("tweets_df")
     if df is not None and not df.empty:
         st.info("🔁 Reviewing last fetched tweets from session cache. No API request is used.")
         display_dashboard(df)
     else:
         st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
-
