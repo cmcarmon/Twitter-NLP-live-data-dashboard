@@ -10,7 +10,7 @@ from textblob import TextBlob
 import tweepy
 from wordcloud import WordCloud
 
-# --- NLTK Download Fix ---
+# --- NLTK Download for required NLP resources ---
 import nltk
 nltk.download('punkt', quiet=True)
 nltk.download('stopwords', quiet=True)
@@ -32,7 +32,6 @@ if "tweets_df" not in st.session_state:
 
 current_time = time.time()
 
-# --- Sidebar Controls ---
 with st.sidebar:
     st.markdown("## 💜")
     st.info(
@@ -214,4 +213,18 @@ if fetch_button:
     else:
         df = fetch_and_analyze(query, tweet_limit)
         if not df.empty:
-            st.session_state['tweets
+            st.session_state['tweets_df'] = df  # Cache last fetch
+        if not BEARER_TOKEN:
+            st.warning("Bearer Token missing—live data fetch won't work until the token is added in Streamlit Cloud's Secrets.")
+        elif df is None or df.empty:
+            st.warning("No tweets found. Try a popular query like #news or wait for new tweets.")
+        else:
+            st.subheader("🟣 Live Tweets")
+            display_dashboard(df)
+else:
+    df = st.session_state.get('tweets_df')
+    if df is not None and not df.empty:
+        st.info("🔁 Reviewing last fetched tweets from session cache. No API request is used.")
+        display_dashboard(df)
+    else:
+        st.info("Click 'Fetch Tweets' in the sidebar to load Twitter data.")
