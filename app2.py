@@ -10,7 +10,7 @@ import tweepy
 from wordcloud import WordCloud
 import nltk
 
-# --- NLTK Robust Setup ---
+# --- Robust NLTK Setup ---
 nltk_data_dir = os.path.join(os.getcwd(), "nltk_data")
 os.makedirs(nltk_data_dir, exist_ok=True)
 if nltk_data_dir not in nltk.data.path:
@@ -24,6 +24,7 @@ from nltk.tokenize import word_tokenize
 
 PURPLE_BG = "#F3F0FF"
 PURPLE_PALETTE = ["#7B2FF2", "#C3B1E1", "#4B0082", "#A259F7", "#6A0572"]
+DARK_TEXT = "#2D1A47"
 
 st.set_page_config(page_title="Live NLP Dashboard", layout="wide")
 st.title("💜 Live Twitter NLP Dashboard")
@@ -43,7 +44,7 @@ with st.sidebar:
         "- **Enter a hashtag or keyword.**\n"
         "- **Choose number of tweets (10–100).**\n"
         "- **Click 'Fetch Tweets' to analyze.**\n"
-        "- Only text-heavy tweets (min 40 words) are analyzed.\n"
+        "- Only text-heavy tweets (min 120 words) are analyzed.\n"
         "- 'Pissed-offness': +1 = Pissed off, -1 = Amused.\n"
         "- Avoid frequent requests to prevent a 15-min cooldown."
     )
@@ -77,7 +78,7 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-def is_text_heavy(tweet, min_words=40):
+def is_text_heavy(tweet, min_words=120):
     clean = clean_text(tweet)
     word_count = len(clean.split())
     return word_count >= min_words
@@ -124,7 +125,7 @@ def fetch_and_analyze(query, tweet_limit):
             for tweet in response.data:
                 lang = getattr(tweet, "lang", None)
                 text = tweet.text
-                if (lang is None or lang == "en") and is_text_heavy(text, min_words=40):
+                if (lang is None or lang == "en") and is_text_heavy(text, min_words=120):
                     polarity = TextBlob(text).sentiment.polarity
                     pissed_score = round(-polarity, 3)
                     amuse_score = round(polarity, 3)
@@ -151,6 +152,14 @@ def fetch_and_analyze(query, tweet_limit):
     return df
 
 def display_metrics(df):
+    if not df.empty:
+        num_amused = (df["Pissed-offness"] < -0.05).sum()
+        num_pissed = (df["Pissed-offness"] > 0.05).sum()
+        amused_pct = 100 * num_amused / len(df.index)
+        pissed_pct = 100 * num_pissed / len(df.index)
+    else:
+        amused_pct = pissed_pct = 0
+
     avg_pissed = df["Pissed-offness"].mean() if not df.empty else 0
     avg_pct = abs(avg_pissed) * 100
     if avg_pissed >= 0:
@@ -159,10 +168,7 @@ def display_metrics(df):
     else:
         metric_label = f"{avg_pct:.0f}% Amused"
         explanation = "(+100 = max pissed off, -100 = max amused, 0 = neutral)"
-    num_amused = (df["Pissed-offness"] < -0.05).sum()
-    num_pissed = (df["Pissed-offness"] > 0.05).sum()
-    amused_pct = 100 * num_amused / len(df) if len(df) > 0 else 0
-    pissed_pct = 100 * num_pissed / len(df) if len(df) > 0 else 0
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Pissed-offness metric", metric_label, help=explanation)
     c2.metric("Amused Tweets", f"{amused_pct:.1f}%")
@@ -173,10 +179,12 @@ def display_dashboard(df):
         st.info("No tweets met the minimum length requirement for analysis. Try a different keyword or fetch more tweets.")
         return
 
-    st.write("#### Filtered Tweets (long-form, text-heavy only)")
+    st.write("#### Filtered Tweets (Long-form, 120+ words)")
     df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
-    selected = st.selectbox("Select a tweet to see details and LIWC features:",
-                            range(len(df)), format_func=lambda i: df.iloc[i]["Short Tweet"] if not df.empty else "")
+    selected = st.selectbox(
+        "Select a tweet to see details and LIWC features:",
+        range(len(df)),
+        format_func=lambda i: df.iloc[i]["Short Tweet"] if not df.empty else "")
     row = df.iloc[selected] if len(df) > 0 else None
     display_metrics(df)
 
@@ -184,20 +192,49 @@ def display_dashboard(df):
         st.markdown(f"**{row['Short Tweet']}**")
         st.code(row["Tweet"], language="markdown")
         st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f}")
-        st.write("##### LIWC-style Feature Analysis:")
-        feat_df = pd.DataFrame(list(row['LIWC'].items()), columns=["Category", "Count"])
-        liwc_fig = px.bar(feat_df, x="Category", y="Count", color="Count", color_continuous_scale=PURPLE_PALETTE,
-                          title="LIWC-style Psychological Categories")
-        liwc_fig.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
+
+    # --- LIWC Feature Overview (Summary Across All Tweets) ---
+    if not df.empty:
+        liwc_summary = pd.DataFrame(df["LIWC"].tolist()).sum().reset_index()
+        liwc_summary.columns = ["Category", "Total Count"]
+        liwc_fig = px.bar(
+            liwc_summary,
+            x="Category",
+            y="Total Count",
+            color="Total Count",
+            color_continuous_scale=PURPLE_PALETTE,
+            title="LIWC-style Psychological Categories (Summary)"
+        )
+        liwc_fig.update_layout(
+            plot_bgcolor=PURPLE_BG,
+            paper_bgcolor=PURPLE_BG,
+            font_color=DARK_TEXT,
+            title_font_color=DARK_TEXT,
+            xaxis_title_font=dict(color=DARK_TEXT),
+            yaxis_title_font=dict(color=DARK_TEXT)
+        )
         st.plotly_chart(liwc_fig, use_container_width=True)
 
     st.markdown("### Word Cloud Overview")
     wordcloud_img = generate_wordcloud([str(t) for t in df["Tweet"]])
     st.image(f"data:image/png;base64,{wordcloud_img}", caption="Words across tweets")
 
-    trend = px.line(df, x="Timestamp", y="Pissed-offness", title="Pissed-offness Metric Trend (Text-Heavy Tweets)",
-                    markers=True, color_discrete_sequence=PURPLE_PALETTE)
-    trend.update_layout(plot_bgcolor=PURPLE_BG, paper_bgcolor=PURPLE_BG, font_color="#2D1A47")
+    trend = px.line(
+        df,
+        x="Timestamp",
+        y="Pissed-offness",
+        title="Pissed-offness Metric Trend (Text-Heavy Tweets)",
+        markers=True,
+        color_discrete_sequence=PURPLE_PALETTE
+    )
+    trend.update_layout(
+        plot_bgcolor=PURPLE_BG,
+        paper_bgcolor=PURPLE_BG,
+        font_color=DARK_TEXT,
+        title_font_color=DARK_TEXT,
+        xaxis_title_font=dict(color=DARK_TEXT),
+        yaxis_title_font=dict(color=DARK_TEXT)
+    )
     st.plotly_chart(trend, use_container_width=True)
 
     csv_data = df.to_csv(index=False)
