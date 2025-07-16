@@ -181,17 +181,20 @@ def display_dashboard(df):
 
     st.write("#### Filtered Tweets (Long-form, 120+ words)")
     df['Short Tweet'] = df["Tweet"].apply(lambda t: t[:70] + ("..." if len(t) > 70 else ""))
-    selected = st.selectbox(
-        "Select a tweet to see details and LIWC features:",
-        range(len(df)),
-        format_func=lambda i: df.iloc[i]["Short Tweet"] if not df.empty else "")
-    row = df.iloc[selected] if len(df) > 0 else None
+    # Dropdown: Change to show all tweets by index and preview, not just the current one.
+    st.write("**Select a tweet below to view its details and LIWC analysis:**")
+    options = [(i, df.iloc[i]["Short Tweet"]) for i in range(len(df))]
+    selected_idx = st.selectbox(
+        "Choose tweet # (and preview):",
+        options,
+        format_func=lambda tup: f"{tup[0]+1}: {tup[1]}"
+    )[0]
+    row = df.iloc[selected_idx]
     display_metrics(df)
 
-    if row is not None:
-        st.markdown(f"**{row['Short Tweet']}**")
-        st.code(row["Tweet"], language="markdown")
-        st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f}")
+    st.markdown(f"**{row['Short Tweet']}**")
+    st.code(row["Tweet"], language="markdown")
+    st.caption(f"🗓️ {row['Timestamp']} | Pissed-offness: {row['Pissed-offness']:+.2f}")
 
     # --- LIWC Feature Overview (Summary Across All Tweets) ---
     if not df.empty:
